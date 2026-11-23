@@ -58,13 +58,18 @@
   .toast.on { opacity:1; }
   .linkbtn { background:none; border:none; color:#58a6ff; padding:6px; font-size:15px; }
   .danger { color:#ff7b72; }
+  .banner { display:flex; gap:10px; align-items:flex-start; margin:6px 16px 0; padding:10px 12px; border-radius:10px; background:#0c2d6b; color:#cae8ff; font-size:14px; }
+  .banner.update { background:var(--accent); color:#04260f; font-weight:700; }
+  .banner span { flex:1; }
+  .banner button { background:none; border:none; color:inherit; padding:0 4px; font-size:16px; }
 </style>
 </head>
 <body>
 
 <!-- BOARD -->
 <section id="board" class="screen on">
-  <header><h1>Board Runner</h1><span class="dim" id="today"></span></header>
+  <header><h1>Board Runner</h1><span><span class="dim" id="today"></span> <button class="copy-sm" id="shareBtn" style="margin-left:8px">Share</button></span></header>
+  <div class="banner" id="banner" style="display:none"><span id="bannerText"></span><button id="bannerX" aria-label="Dismiss">✕</button></div>
   <div class="privacy">🔒 Room # only — <b>no names, MRN, or DOB</b>. Cards stay on this phone and clear at midnight.</div>
   <div class="list" id="list"></div>
   <div class="dock">
@@ -306,6 +311,35 @@
   $('delBtn').onclick = () => {
     if (confirm('Delete this card?')) { state.cards = state.cards.filter(c => c !== current); save(); renderBoard(); show('board'); }
   };
+
+  // ---------- share ----------
+  const APP_URL = location.origin + location.pathname.replace(/index\.html$/, '');
+  $('shareBtn').onclick = async () => {
+    const data = { title: 'Board Runner', text: 'Board Runner: pre-op dictation to a board card. Room # only, nothing leaves your phone. Tip: Share > Add to Home Screen.', url: APP_URL };
+    if (navigator.share) { try { await navigator.share(data); } catch (e) {} }
+    else copy(APP_URL);
+  };
+
+  // ---------- update banner (reads version.json; sends nothing) ----------
+  const APP_VERSION = '3';
+  async function checkVersion() {
+    let v;
+    try { v = await (await fetch('version.json?t=' + Date.now(), { cache: 'no-store' })).json(); } catch (e) { return; }
+    const b = $('banner');
+    if (v.version && v.version !== APP_VERSION) {
+      b.className = 'banner update'; $('bannerText').textContent = '⬆️ New version ready — tap here to update';
+      $('bannerX').style.display = 'none'; b.style.display = 'flex';
+      b.onclick = () => location.reload();
+      return;
+    }
+    let dismissed = null; try { dismissed = localStorage.getItem('br.dismissed'); } catch (e) {}
+    if (v.message && dismissed !== v.version + '|' + v.message) {
+      b.className = 'banner'; $('bannerText').textContent = v.message; $('bannerX').style.display = ''; b.style.display = 'flex'; b.onclick = null;
+      $('bannerX').onclick = () => { try { localStorage.setItem('br.dismissed', v.version + '|' + v.message); } catch (e) {} b.style.display = 'none'; };
+    } else b.style.display = 'none';
+  }
+  checkVersion();
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkVersion(); });
 
   renderBoard();
 })();
