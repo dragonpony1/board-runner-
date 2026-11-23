@@ -79,9 +79,11 @@
 <!-- LISTENING -->
 <section id="listen" class="screen">
   <button class="orb live" id="orb">Listening<br><span style="font-weight:400;font-size:14px">tap to pause</span></button>
-  <textarea id="typebox" placeholder="Tap here, then the 🎤 on your keyboard to dictate. Room # only."></textarea>
+  <textarea id="typebox" placeholder="Tap here, then the 🎤 on your keyboard. Dictate in bursts — tap Done when finished. Room # only."></textarea>
   <button class="done" id="doneBtn">Done</button>
   <button class="cancel" id="cancelBtn">Cancel</button>
+  <button class="linkbtn" id="kbBtn">⌨️ Use keyboard mic instead</button>
+  <button class="linkbtn" id="micBtn" style="display:none">🎤 Use big mic button</button>
 </section>
 
 <!-- EDITOR -->
@@ -177,39 +179,54 @@
 
   function startDictation(cardId) {
     target = cardId || null;
-    buffer = ''; pending = '';
+    buffer = ''; pending = ''; sessionText = '';
     show('listen');
     $('typebox').value = '';
-    if (!SR) { $('orb').style.display = 'none'; $('typebox').style.display = 'block'; $('typebox').focus(); return; }
-    $('orb').style.display = ''; $('typebox').style.display = 'none';
+    let kb = false; try { kb = localStorage.getItem('br.mode') === 'kb'; } catch (e) {}
+    if (!SR || kb) { $('orb').style.display = 'none'; $('kbBtn').style.display = 'none'; $('typebox').style.display = 'block'; $('micBtn').style.display = SR ? '' : 'none'; $('typebox').focus(); return; }
+    $('orb').style.display = ''; $('kbBtn').style.display = ''; $('micBtn').style.display = 'none'; $('typebox').style.display = 'none';
     listening = true; setOrb(); startRec();
     if (navigator.wakeLock) navigator.wakeLock.request('screen').then(w => wakeLock = w).catch(() => {});
   }
+  // iOS Safari: continuous mode, rebuild the session text from ALL results each event
+  // (some iOS versions repeat earlier words inside later results, so collapse those).
+  let sessionText = '';
+  function sessionFrom(results) {
+    const parts = [];
+    for (let i = 0; i < results.length; i++) {
+      const t = results[i][0].transcript.trim();
+      if (!t) continue;
+      const prev = parts[parts.length - 1];
+      if (prev && t.toLowerCase().startsWith(prev.toLowerCase())) parts[parts.length - 1] = t;
+      else parts.push(t);
+    }
+    return parts.join(' ');
+  }
+  function commitSession() { if (sessionText.trim()) buffer += sessionText.trim() + '. '; sessionText = ''; }
   function startRec() {
     try {
       rec = new SR();
-      rec.lang = 'en-US'; rec.continuous = false; rec.interimResults = true; rec.maxAlternatives = 1;
+      rec.lang = 'en-US'; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 1;
       rec.onresult = e => {
-        let interim = '';
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          const r = e.results[i];
-          if (r.isFinal) { buffer += r[0].transcript + '. '; pending = ''; } else interim += r[0].transcript;
-        }
-        if (interim) pending = interim;
-        if (/\bpepper[\s.!]*$/i.test(buffer + pending)) finish();       // say "pepper" to finish
+        sessionText = sessionFrom(e.results);
+        if (/\bpepper[\s.!]*$/i.test(sessionText)) finish();       // say "pepper" to finish
       };
-      rec.onerror = e => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { listening = false; fallbackToType(); } };
+      rec.onerror = e => {
+        if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { listening = false; useKeyboard(); }
+      };
       rec.onend = () => {
-        if (pending) { buffer += pending + '. '; pending = ''; }
-        if (listening) setTimeout(() => { if (listening) startRec(); }, 120);  // keep going between bursts
+        commitSession();
+        if (listening) setTimeout(() => { if (listening) startRec(); }, 50);  // auto-restart after pauses
       };
       rec.start();
-    } catch (e) { fallbackToType(); }
+    } catch (e) { useKeyboard(); }
   }
-  function fallbackToType() {
-    $('orb').style.display = 'none'; $('typebox').style.display = 'block';
+  function useKeyboard() {
+    stopRec(); commitSession();
+    $('orb').style.display = 'none'; $('kbBtn').style.display = 'none'; $('typebox').style.display = 'block';
     $('typebox').value = buffer; $('typebox').focus();
   }
+  $('kbBtn').onclick = () => { try { localStorage.setItem('br.mode', 'kb'); } catch (e) {} useKeyboard(); };
   function setOrb() {
     const o = $('orb');
     o.classList.toggle('live', listening); o.classList.toggle('paused', !listening);
@@ -225,7 +242,8 @@
   function finish() {
     stopRec(); release();
     setTimeout(() => {   // let the last result land
-      let text = ($('typebox').style.display === 'block' ? $('typebox').value : buffer + pending).trim();
+      commitSession();
+      let text = ($('typebox').style.display === 'block' ? $('typebox').value : buffer).trim();
       text = text.replace(/\bpepper[\s.!]*$/i, '').trim();
       pending = '';
       if (!text) { toast('Nothing heard'); show(target ? 'editor' : 'board'); return; }
@@ -249,6 +267,7 @@
   }
 
   $('newBtn').onclick = () => startDictation(null);
+  $('micBtn').onclick = () => { try { localStorage.removeItem('br.mode'); } catch (e) {} startDictation(target); };
 
   // ---------- editor ----------
   let current = null;
