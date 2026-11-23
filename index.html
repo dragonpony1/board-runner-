@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="robots" content="noindex">
+<title>Board Runner</title>
+<style>
+  :root { --bg:#0d1117; --panel:#161b22; --line:#2a313c; --text:#e6edf3; --dim:#8b949e; --accent:#3fb950; --rec:#f85149; --warn:#d29922; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; background:var(--bg); color:var(--text); font:17px/1.4 -apple-system, system-ui, sans-serif; }
+  body { padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom); min-height:100vh; }
+  .screen { display:none; min-height:100vh; flex-direction:column; }
+  .screen.on { display:flex; }
+  header { display:flex; align-items:center; justify-content:space-between; padding:14px 16px 6px; }
+  h1 { font-size:22px; margin:0; letter-spacing:.3px; }
+  .dim { color:var(--dim); font-size:14px; }
+  .privacy { margin:6px 16px 10px; padding:10px 12px; border:1px solid var(--warn); border-radius:10px; color:#f0c674; font-size:14px; }
+  .list { flex:1; padding:0 12px 170px; }
+  .empty { text-align:center; color:var(--dim); margin-top:40px; }
+  .row { display:flex; gap:12px; align-items:center; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px; margin:8px 0; }
+  .room { font-size:26px; font-weight:700; min-width:54px; text-align:center; }
+  .row .main { flex:1; min-width:0; }
+  .row .proc { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .row .fl { color:#ffa198; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  button { font:inherit; color:var(--text); background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px 14px; }
+  button:active { opacity:.7; }
+  .copy-sm { padding:10px 12px; font-size:15px; }
+  .dock { position:fixed; left:0; right:0; bottom:0; padding:12px 16px calc(14px + env(safe-area-inset-bottom)); background:linear-gradient(transparent, var(--bg) 30%); display:flex; flex-direction:column; align-items:center; gap:10px; }
+  .mic { width:120px; height:120px; border-radius:50%; background:var(--rec); border:none; font-size:17px; font-weight:700; color:#fff; box-shadow:0 6px 30px rgba(248,81,73,.35); }
+  .dock .sub { display:flex; gap:10px; }
+  /* listening */
+  #listen { justify-content:center; align-items:center; background:#000; gap:34px; }
+  .orb { width:220px; height:220px; border-radius:50%; background:var(--rec); border:none; color:#fff; font-size:20px; font-weight:700; }
+  .orb.live { animation:pulse 1.4s ease-in-out infinite; }
+  .orb.paused { background:#30363d; }
+  @keyframes pulse { 0%,100%{ box-shadow:0 0 0 0 rgba(248,81,73,.55);} 50%{ box-shadow:0 0 0 28px rgba(248,81,73,0);} }
+  .done { width:220px; padding:18px; font-size:22px; font-weight:700; background:var(--accent); color:#04260f; border:none; border-radius:16px; }
+  .cancel { background:none; border:none; color:var(--dim); }
+  #typebox { display:none; width:88%; min-height:160px; background:#111; color:var(--text); border:1px solid var(--line); border-radius:12px; padding:12px; font:inherit; }
+  /* editor */
+  .ed { padding:4px 14px 120px; }
+  .field { margin:10px 0; }
+  .field label { display:block; font-size:12px; font-weight:700; color:var(--dim); letter-spacing:.6px; margin-bottom:3px; }
+  .field textarea { width:100%; resize:none; overflow:hidden; background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:10px; padding:10px; font:inherit; min-height:44px; }
+  .field textarea.q { border-color:var(--warn); }
+  .field.flags textarea { color:#ffa198; }
+  .msg { margin:8px 14px 0; padding:10px 12px; border-radius:10px; font-size:14px; }
+  .msg.warn { background:#3d2a00; color:#f0c674; }
+  .msg.note { background:#1c2530; color:#9ecbff; }
+  details { margin:14px 0; color:var(--dim); }
+  details textarea { width:100%; min-height:110px; background:#111; color:var(--text); border:1px solid var(--line); border-radius:10px; padding:10px; font:15px/1.4 inherit; }
+  .bar { position:fixed; left:0; right:0; bottom:0; display:flex; gap:10px; padding:10px 14px calc(12px + env(safe-area-inset-bottom)); background:var(--bg); border-top:1px solid var(--line); }
+  .bar .big { flex:1; background:var(--accent); color:#04260f; font-weight:700; border:none; font-size:19px; }
+  .toast { position:fixed; left:50%; top:20px; transform:translateX(-50%); background:var(--accent); color:#04260f; font-weight:700; padding:10px 18px; border-radius:20px; opacity:0; transition:opacity .2s; pointer-events:none; z-index:9; }
+  .toast.on { opacity:1; }
+  .linkbtn { background:none; border:none; color:#58a6ff; padding:6px; font-size:15px; }
+  .danger { color:#ff7b72; }
+</style>
+</head>
+<body>
+
+<!-- BOARD -->
+<section id="board" class="screen on">
+  <header><h1>Board Runner</h1><span class="dim" id="today"></span></header>
+  <div class="privacy">🔒 Room # only — <b>no names, MRN, or DOB</b>. Cards stay on this phone and clear at midnight.</div>
+  <div class="list" id="list"></div>
+  <div class="dock">
+    <button class="mic" id="newBtn" aria-label="New patient">🎤<br>New pt</button>
+    <div class="sub">
+      <button class="copy-sm" id="copyAll">Copy board</button>
+      <button class="copy-sm danger" id="clearAll">Clear</button>
+    </div>
+  </div>
+</section>
+
+<!-- LISTENING -->
+<section id="listen" class="screen">
+  <button class="orb live" id="orb">Listening<br><span style="font-weight:400;font-size:14px">tap to pause</span></button>
+  <textarea id="typebox" placeholder="Tap here, then the 🎤 on your keyboard to dictate. Room # only."></textarea>
+  <button class="done" id="doneBtn">Done</button>
+  <button class="cancel" id="cancelBtn">Cancel</button>
+</section>
+
+<!-- EDITOR -->
+<section id="editor" class="screen">
+  <header>
+    <button class="linkbtn" id="backBtn">‹ Board</button>
+    <button class="linkbtn" id="moreBtn">🎤 Add more</button>
+  </header>
+  <div id="msgs"></div>
+  <div class="ed" id="fields"></div>
+  <div class="ed" style="padding-top:0">
+    <details>
+      <summary>Dictation transcript</summary>
+      <textarea id="transcript"></textarea>
+      <button class="copy-sm" id="reparse">Re-read transcript</button>
+      <div class="dim" style="margin-top:6px">Re-reading keeps fields you edited by hand.</div>
+    </details>
+    <button class="copy-sm danger" id="delBtn">Delete card</button>
+  </div>
+  <div class="bar"><button class="big" id="copyBtn">Copy card</button></div>
+</section>
+
+<div class="toast" id="toast">Copied</div>
+
+<script src="parser.js"></script>
+<script>
+(() => {
+  'use strict';
+  const KEY = 'boardrunner.v1';
+  const $ = id => document.getElementById(id);
+  const P = window.BRParser;
+
+  // ---------- storage (this phone only; wiped when the date changes) ----------
+  const today = () => { const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); };
+  function load() {
+    let s = null;
+    try { s = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
+    if (!s || s.date !== today()) { s = { date: today(), cards: [] }; try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) {} }
+    return s;
+  }
+  let state = load();
+  const save = () => { state.date = today(); try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} };
+  function checkDay() { if (state.date !== today()) { state = load(); renderBoard(); show('board'); } }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkDay(); });
+  setInterval(checkDay, 60000);
+
+  // ---------- screens ----------
+  function show(id) { document.querySelectorAll('.screen').forEach(s => s.classList.toggle('on', s.id === id)); window.scrollTo(0, 0); }
+  function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add('on'); setTimeout(() => el.classList.remove('on'), 1300); }
+  const esc = s => String(s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  async function copy(text) {
+    try { await navigator.clipboard.writeText(text); }
+    catch (e) {
+      const ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select();
+      ta.setSelectionRange(0, text.length); document.execCommand('copy'); ta.remove();
+    }
+    toast('Copied');
+  }
+
+  // ---------- board ----------
+  const roomSort = (a, b) => (parseInt(a.fields.room) || 999) - (parseInt(b.fields.room) || 999) || String(a.fields.room).localeCompare(String(b.fields.room));
+  function renderBoard() {
+    const d = new Date();
+    $('today').textContent = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+    const cards = state.cards.slice().sort(roomSort);
+    $('list').innerHTML = cards.length ? '' : '<div class="empty">No patients yet.<br>Tap the mic in the pre-op room.</div>';
+    for (const c of cards) {
+      const row = document.createElement('div');
+      row.className = 'row';
+      const nFlags = (c.fields.flags || '').split('•').filter(x => x.trim()).length;
+      row.innerHTML = `<div class="room">${esc(c.fields.room || '?')}</div>
+        <div class="main"><div class="proc">${esc(c.fields.proc || 'Procedure —')}</div>
+        <div class="fl">${nFlags ? '⚑ ' + esc(c.fields.flags) : '<span class="dim">No flags</span>'}</div></div>
+        <button class="copy-sm">Copy</button>`;
+      row.querySelector('.main').onclick = row.querySelector('.room').onclick = () => openCard(c.id);
+      row.querySelector('button').onclick = () => copy(P.cardText(c.fields));
+      $('list').appendChild(row);
+    }
+  }
+  $('copyAll').onclick = () => {
+    if (!state.cards.length) return toast('Board is empty');
+    copy(state.cards.slice().sort(roomSort).map(c => P.cardText(c.fields)).join('\n\n'));
+  };
+  $('clearAll').onclick = () => {
+    if (state.cards.length && confirm('Clear all of today\'s cards from this phone?')) { state.cards = []; save(); renderBoard(); }
+  };
+
+  // ---------- dictation ----------
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec = null, listening = false, buffer = '', pending = '', target = null, wakeLock = null;
+
+  function startDictation(cardId) {
+    target = cardId || null;
+    buffer = ''; pending = '';
+    show('listen');
+    $('typebox').value = '';
+    if (!SR) { $('orb').style.display = 'none'; $('typebox').style.display = 'block'; $('typebox').focus(); return; }
+    $('orb').style.display = ''; $('typebox').style.display = 'none';
+    listening = true; setOrb(); startRec();
+    if (navigator.wakeLock) navigator.wakeLock.request('screen').then(w => wakeLock = w).catch(() => {});
+  }
+  function startRec() {
+    try {
+      rec = new SR();
+      rec.lang = 'en-US'; rec.continuous = false; rec.interimResults = true; rec.maxAlternatives = 1;
+      rec.onresult = e => {
+        let interim = '';
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const r = e.results[i];
+          if (r.isFinal) { buffer += r[0].transcript + '. '; pending = ''; } else interim += r[0].transcript;
+        }
+        if (interim) pending = interim;
+        if (/\bpepper[\s.!]*$/i.test(buffer + pending)) finish();       // say "pepper" to finish
+      };
+      rec.onerror = e => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { listening = false; fallbackToType(); } };
+      rec.onend = () => {
+        if (pending) { buffer += pending + '. '; pending = ''; }
+        if (listening) setTimeout(() => { if (listening) startRec(); }, 120);  // keep going between bursts
+      };
+      rec.start();
+    } catch (e) { fallbackToType(); }
+  }
+  function fallbackToType() {
+    $('orb').style.display = 'none'; $('typebox').style.display = 'block';
+    $('typebox').value = buffer; $('typebox').focus();
+  }
+  function setOrb() {
+    const o = $('orb');
+    o.classList.toggle('live', listening); o.classList.toggle('paused', !listening);
+    o.innerHTML = listening ? 'Listening<br><span style="font-weight:400;font-size:14px">tap to pause</span>'
+                            : 'Paused<br><span style="font-weight:400;font-size:14px">tap to continue</span>';
+  }
+  function stopRec() { listening = false; try { rec && rec.stop(); } catch (e) {} }
+  $('orb').onclick = () => { if (listening) { stopRec(); setOrb(); } else { listening = true; setOrb(); startRec(); } };
+  $('cancelBtn').onclick = () => { stopRec(); release(); buffer = ''; show(target ? 'editor' : 'board'); };
+  $('doneBtn').onclick = () => finish();
+  function release() { try { wakeLock && wakeLock.release(); } catch (e) {} wakeLock = null; }
+
+  function finish() {
+    stopRec(); release();
+    setTimeout(() => {   // let the last result land
+      let text = ($('typebox').style.display === 'block' ? $('typebox').value : buffer + pending).trim();
+      text = text.replace(/\bpepper[\s.!]*$/i, '').trim();
+      pending = '';
+      if (!text) { toast('Nothing heard'); show(target ? 'editor' : 'board'); return; }
+      if (target) {
+        const c = state.cards.find(x => x.id === target);
+        c.transcript = (c.transcript + ' ' + text).trim();
+        reparse(c);
+        openCard(c.id);
+      } else {
+        const r = P.parse(text);
+        const c = { id: Date.now().toString(36), created: Date.now(), transcript: text, fields: r.card, edited: [], notes: r.notes, warnings: r.warnings };
+        state.cards.push(c); save(); openCard(c.id);
+      }
+    }, 350);
+  }
+
+  function reparse(c) {
+    const r = P.parse(c.transcript);
+    for (const [k] of P.FIELD_ORDER) if (!c.edited.includes(k)) c.fields[k] = r.card[k];
+    c.notes = r.notes; c.warnings = r.warnings; save();
+  }
+
+  $('newBtn').onclick = () => startDictation(null);
+
+  // ---------- editor ----------
+  let current = null;
+  function grow(t) { t.style.height = 'auto'; t.style.height = t.scrollHeight + 2 + 'px'; }
+  function openCard(id) {
+    current = state.cards.find(c => c.id === id);
+    if (!current) return show('board');
+    const msgs = (current.warnings || []).map(w => `<div class="msg warn">⚠ ${esc(w)}</div>`)
+      .concat((current.notes || []).map(n => `<div class="msg note">? ${esc(n)}</div>`));
+    $('msgs').innerHTML = msgs.join('');
+    $('fields').innerHTML = '';
+    for (const [k, label] of P.FIELD_ORDER) {
+      const f = document.createElement('div');
+      f.className = 'field' + (k === 'flags' ? ' flags' : '');
+      f.innerHTML = `<label>${label}</label><textarea rows="1" placeholder="—" ${k === 'room' ? 'inputmode="text"' : ''}></textarea>`;
+      const ta = f.querySelector('textarea');
+      ta.value = current.fields[k] || '';
+      ta.classList.toggle('q', /\?/.test(ta.value));
+      ta.oninput = () => {
+        current.fields[k] = ta.value;
+        if (!current.edited.includes(k)) current.edited.push(k);
+        ta.classList.toggle('q', /\?/.test(ta.value));
+        grow(ta); save();
+      };
+      $('fields').appendChild(f);
+    }
+    $('transcript').value = current.transcript;
+    show('editor');
+    document.querySelectorAll('#fields textarea').forEach(grow);
+  }
+  $('transcript').oninput = () => { current.transcript = $('transcript').value; save(); };
+  $('reparse').onclick = () => { reparse(current); openCard(current.id); toast('Re-read'); };
+  $('copyBtn').onclick = () => copy(P.cardText(current.fields));
+  $('backBtn').onclick = () => { renderBoard(); show('board'); };
+  $('moreBtn').onclick = () => startDictation(current.id);
+  $('delBtn').onclick = () => {
+    if (confirm('Delete this card?')) { state.cards = state.cards.filter(c => c !== current); save(); renderBoard(); show('board'); }
+  };
+
+  renderBoard();
+})();
+</script>
+</body>
+</html>
